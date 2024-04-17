@@ -1,8 +1,0 @@
-# .gitignore
-.env
-config.yaml
-.aider*
-.aider.conf.yml
-aider/__pycache__
-aider/coders/__pycache__
-aider/models/__pycache__
