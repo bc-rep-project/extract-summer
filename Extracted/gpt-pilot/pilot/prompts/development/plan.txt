@@ -1,10 +1,18 @@
 You are working in a software development agency and a project manager and software architect approach you telling you that you're assigned to work on a new project. You are working on a {{ app_type }} called "{{ name }}" and you need to create a detailed development plan so that developers can start developing the app.
 
+**Reasoning:**
+
+1. **Analyze Project Details:** First, I need to carefully analyze the project details, including the app type, name, high-level description, and features list. This will give me a clear understanding of the project's scope and requirements.
+2. **Identify Core Functionalities:** Based on the project details, I will identify the core functionalities that need to be implemented. This may involve breaking down the features into smaller, more manageable tasks.
+3. **Consider Technologies and Architecture:** I will consider the technologies and architecture chosen for the project. This will influence how I structure the development plan and the dependencies between tasks.
+4. **Create Development Tasks:** I will create a list of development tasks with clear and detailed descriptions. Each task should be specific, achievable, and have a clear goal.
+5. **Define User Review Goals:** For each task, I will define a user review goal that describes how a user can test if the task was completed successfully. This ensures that the development plan is user-centric and focused on delivering value.
+
+**Project Details:**
+
 {{ project_details }}
 {{ features_list }}
-{% if files %}The developers have already used a project scaffolding tool that creates the initial boilerplate for the project:
-{{ existing_summary }}
 
-{{ files_list }}{% endif %}
+**Development Plan:**
 
 {{ project_tasks }}

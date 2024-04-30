@@ -49,6 +49,9 @@ ENVIRONMENT_SETUP_STEP = 'environment_setup'
 class Developer(Agent):
     def __init__(self, project):
         super().__init__('full_stack_developer', project)
+        self.project = project
+        self.research_agent = ResearchAgent(self.project.llm_wrapper)
+        self.testing_agent = self.project.testing_agent
         self.review_count = 0
         self.run_command = None
         self.save_dev_steps = True
@@ -139,6 +142,33 @@ class Developer(Agent):
                 telemetry.send()
 
     def implement_task(self, i, task_source, development_task=None):
+
+        # Utilize ResearchAgent before task implementation
+        research_query = f"Best practices for implementing {development_task['description']}"
+        research_results = self.research_agent.research(research_query)
+        print(f"Research Results:\n{research_results}")
+
+        # Task Implementation Logic
+        generated_code = self.code_implementation(development_task)
+
+        # Utilize TestingAgent after code generation
+        function_name = self.identify_function(generated_code)
+        test_cases = self.testing_agent.generate_test_cases(generated_code, function_name)
+        test_results = self.testing_agent.execute_tests(test_cases)
+        print(f"Test Results:\n{test_results}")
+
+    def code_implementation(self, development_task):
+        # Implement the task and return the generated code
+        # This is a placeholder and should be replaced with actual implementation logic
+        code = f"def {development_task['name']}():\n    # TODO: Implement the function here\n    pass"
+        return code
+
+    def identify_function(self, generated_code):
+        # Identify the function to be tested from the generated code
+        # This is a placeholder and should be replaced with actual logic to identify the function
+        function_name = generated_code.split(' ')[1].split('(')[0]
+        return function_name
+
         """
         Implement a single development task.
 

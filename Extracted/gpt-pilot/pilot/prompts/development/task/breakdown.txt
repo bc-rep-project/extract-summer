@@ -16,6 +16,12 @@ You are currently working on task #{{ current_task_index + 1 }} with the followi
 ```
 {% if current_task_index != 0 %}All previous tasks are finished and you don't have to work on them.{% endif %}
 
+**Reasoning:**
+
+To implement this task, I need to analyze the project's current state, including the existing code, features, and the specific requirements of this task. I will break down the task into smaller, actionable steps that involve writing code, running commands, or potentially requesting human intervention if necessary. Each step will be clear, concise, and ordered logically to ensure smooth execution and prevent errors.
+
+**Action:**
+
 Now, tell me all the code that needs to be written to implement ONLY this task and have it fully working and all commands that need to be run to implement this task.
 
 **IMPORTANT**

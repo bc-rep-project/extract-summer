@@ -41,6 +41,12 @@ Focus on solving this issue in the following way:
 {{ next_solution_to_try }}
 ```
 {% endif %}
+**Reasoning:** 
+
+To address the user's feedback and debug the issue, I will first analyze the provided information, including the user's description of the problem, the relevant code sections, and the context of previous iterations. I will then formulate a solution that directly addresses the issue while considering potential side effects and ensuring it aligns with the overall project goals and design. 
+
+**Action:**
+
 Now, you have to debug this issue and comply with the additional user feedback.
 
 **IMPORTANT**
