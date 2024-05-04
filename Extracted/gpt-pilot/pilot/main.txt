@@ -59,6 +59,39 @@ def init():
     return arguments
 
 
+def rollback(app_id, steps=1):
+    # Fetch rollback history
+    history = RollbackHistory.select().where(RollbackHistory.app == app_id).order_by(RollbackHistory.timestamp.desc())
+    
+    # Identify target step
+    target_step = history[steps - 1]
+
+    # Restore project state
+    project = Project({'app_id': app_id})  # Create a temporary project instance
+    project.set_root_path(setup_workspace(project.args))  # Set workspace path
+
+    # Iterate through rollback history from target step back to the beginning
+    for rollback_step in reversed(history[:steps]):
+        step_data = rollback_step.step_data
+        
+        if step_data["prompt_path"] == "development/implement_changes.prompt":
+            # Revert file changes
+            file_name = step_data["prompt_data"]["file_name"]
+            file_content = step_data["prompt_data"]["file_content"]
+            relative_path, absolute_path = project.get_full_file_path("", file_name)
+            update_file(absolute_path, file_content)  # Restore previous file content
+        elif step_data["prompt_path"] == "development/task/breakdown.prompt":
+            # Handle potential command rollbacks
+            for command_run in CommandRuns.select().where(
+                (CommandRuns.app == app_id) &
+                (CommandRuns.high_level_step == step_data["step_id"])
+            ).order_by(CommandRuns.timestamp.desc()):
+                command = command_run.command
+                if "npm install" in command:
+                    # Uninstall packages
+                    package_names = re.findall
+
+
 if __name__ == "__main__":
     ask_feedback = True
     project = None

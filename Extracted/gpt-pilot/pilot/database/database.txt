@@ -393,6 +393,20 @@ def save_development_step(project, prompt_path, prompt_data, messages, llm_respo
     project.save_files_snapshot(development_step.id)
 
 
+    # Save rollback data
+    RollbackHistory.create(
+        app=project.app,
+        step_id=development_step.id,
+        step_data={
+            "prompt_path": prompt_path,
+            "prompt_data": prompt_data,
+            "messages": messages,
+            "llm_response": llm_response,
+            # ... other relevant data ...
+        }
+    )
+
+
 def save_command_run(project, command, cli_response, done_or_error_response, exit_code):
     if project.current_step != 'coding':
         return
