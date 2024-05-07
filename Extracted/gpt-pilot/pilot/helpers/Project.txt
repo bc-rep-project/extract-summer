@@ -1,5 +1,10 @@
 import json
 import os
+import shutil
+from datetime import datetime
+from peewee import *
+# from database.database import Snapshot
+
 from pathlib import Path
 from typing import Tuple, Optional, Union
 
@@ -40,6 +45,18 @@ from utils.describe import describe_file
 from os.path import abspath, relpath
 
 
+db = SqliteDatabase('snapshots.db')  # Or your preferred database
+
+class Snapshot(Model):
+    timestamp = DateTimeField(default=datetime.now)
+    step = CharField()  # Associated development step
+    user_input = TextField(null=True)
+    data = TextField()  # JSON-serialized snapshot data
+
+    class Meta:
+        database = db
+
+
 class Project:
     def __init__(
         self,
@@ -70,6 +87,9 @@ class Project:
             'last_command_run': None,
             'last_development_step': None,
         }
+        self.snapshots = []
+        self.current_state = None
+        self.workspace_path = None  # Assuming you have a way to set the workspace path
         # TODO make flexible
         self.root_path = ''
         self.skip_until_dev_step = self.args['skip_until_dev_step'] if 'skip_until_dev_step' in self.args else None
@@ -107,6 +127,100 @@ class Project:
         self.dev_steps_to_load = []
         self.run_command = None
         # end loading of project
+
+        
+    def create_snapshot(self, development_step, user_input=None, snapshot_data={}):
+        snapshot = {
+            'timestamp': datetime.now().isoformat(),
+            'development_step': development_step,
+            'user_input': user_input,
+            'snapshot_data': json.dumps(snapshot_data)
+        }
+        self.snapshots.append(snapshot)
+        self.current_state = snapshot
+
+        # Create a directory for the snapshot
+        snapshot_dir = os.path.join(self.workspace_path, f"snapshot_{len(self.snapshots)}")
+        os.makedirs(snapshot_dir, exist_ok=True)
+
+        # Save snapshot data to a file
+        with open(os.path.join(snapshot_dir, "data.json"), "w") as f:
+            json.dump(snapshot_data, f)
+
+    def list_snapshots(self):
+        return self.snapshots
+
+    def restore_snapshot(self, snapshot_index):
+        if 0 <= snapshot_index < len(self.snapshots):
+            snapshot = self.snapshots[snapshot_index]
+            snapshot_data = json.loads(snapshot['snapshot_data'])
+
+            # Restore file system from the snapshot
+            self._restore_file_system(snapshot_data.get('file_system', {}))
+
+            # Restore project variables (implement as needed)
+            # ... 
+
+            self.current_state = snapshot
+            print(f"Restored snapshot from {snapshot['timestamp']} (Step: {snapshot['development_step']})")
+        else:
+            print("Invalid snapshot index")
+
+    def save_development_step(self, development_step):
+        # Save the development step
+        # ...
+
+        snapshot_data = {
+            # ... (capture relevant data for rollback) ...
+            'file_system': self._capture_file_system_state(),
+            # 'variables': self.get_project_variables(),  # Add if needed
+        }
+        self.create_snapshot(development_step, data=snapshot_data)
+
+    def save_user_input(self, user_input):
+        # Save the user input
+        # ...
+        snapshot_data = {
+            # ... (capture relevant data for rollback) ...
+            'file_system': self._capture_file_system_state(),
+            # 'variables': self.get_project_variables(),  # Add if needed
+        }
+        self.create_snapshot(None, user_input, data=snapshot_data)
+
+
+    def _capture_file_system_state(self):
+        """
+        Capture the state of the project's file system.
+        """
+        file_system_state = {}
+        for dirpath, dirnames, filenames in os.walk(self.workspace_path):
+            for filename in filenames:
+                file_path = os.path.join(dirpath, filename)
+                with open(file_path, 'r') as f:
+                    file_system_state[file_path] = f.read()
+        return file_system_state
+
+    def _restore_file_system(self, file_system_state):
+        """
+        Restore the file system from a snapshot.
+        """
+        # Clear the current workspace (be cautious with this!)
+        for filename in os.listdir(self.workspace_path):
+            file_path = os.path.join(self.workspace_path, filename)
+            try:
+                if os.path.isfile(file_path) or os.path.islink(file_path):
+                    os.unlink(file_path)
+                elif os.path.isdir(file_path):
+                    shutil.rmtree(file_path)
+            except Exception as e:
+                print(f"Error while clearing workspace: {e}")
+
+        # Restore files from the snapshot
+        for file_path, content in file_system_state.items():
+            os.makedirs(os.path.dirname(file_path), exist_ok=True)
+            with open(file_path, 'w') as f:
+                f.write(content)
+
 
     def set_root_path(self, root_path: str):
         self.root_path = root_path

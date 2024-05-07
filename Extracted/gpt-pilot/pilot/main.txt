@@ -30,6 +30,7 @@ from helpers.Project import Project
 from utils.arguments import get_arguments
 from utils.exit import exit_gpt_pilot
 from logger.logger import logger
+# from database.models.rollback_history import RollbackHistory
 from database.database import (
     database_exists,
     create_database,
@@ -59,37 +60,57 @@ def init():
     return arguments
 
 
-def rollback(app_id, steps=1):
-    # Fetch rollback history
-    history = RollbackHistory.select().where(RollbackHistory.app == app_id).order_by(RollbackHistory.timestamp.desc())
+    # Handle rollback command
+    if args.get('command') == 'rollback':
+        project = Project(args) 
+        if args.get('action') == 'list':
+            project.list_snapshots()
+        elif args.get('action') == 'restore':
+            snapshot_id = args.get('snapshot_id')
+            if snapshot_id is not None:
+                project.restore_snapshot(int(snapshot_id))  # Assuming snapshot_id is an integer
+            else:
+                print("Error: --restore requires a snapshot ID (e.g., --restore 2)")
+        elif args.get('action') == 'steps':
+            steps = args.get('steps')
+            if steps is not None:
+                project.rollback_steps(int(steps))  # Assuming steps is an integer 
+            else:
+                print("Error: --steps requires a number of steps to roll back (e.g., --steps 3)")
+        else:
+            print("Invalid rollback action. Use --help for usage information.")
+
+# def rollback(app_id, steps=1):
+#     # Fetch rollback history
+#     history = RollbackHistory.select().where(RollbackHistory.app == app_id).order_by(RollbackHistory.timestamp.desc())
     
-    # Identify target step
-    target_step = history[steps - 1]
+#     # Identify target step
+#     target_step = history[steps - 1]
 
-    # Restore project state
-    project = Project({'app_id': app_id})  # Create a temporary project instance
-    project.set_root_path(setup_workspace(project.args))  # Set workspace path
+#     # Restore project state
+#     project = Project({'app_id': app_id})  # Create a temporary project instance
+#     project.set_root_path(setup_workspace(project.args))  # Set workspace path
 
-    # Iterate through rollback history from target step back to the beginning
-    for rollback_step in reversed(history[:steps]):
-        step_data = rollback_step.step_data
+#     # Iterate through rollback history from target step back to the beginning
+#     for rollback_step in reversed(history[:steps]):
+#         step_data = rollback_step.step_data
         
-        if step_data["prompt_path"] == "development/implement_changes.prompt":
-            # Revert file changes
-            file_name = step_data["prompt_data"]["file_name"]
-            file_content = step_data["prompt_data"]["file_content"]
-            relative_path, absolute_path = project.get_full_file_path("", file_name)
-            update_file(absolute_path, file_content)  # Restore previous file content
-        elif step_data["prompt_path"] == "development/task/breakdown.prompt":
-            # Handle potential command rollbacks
-            for command_run in CommandRuns.select().where(
-                (CommandRuns.app == app_id) &
-                (CommandRuns.high_level_step == step_data["step_id"])
-            ).order_by(CommandRuns.timestamp.desc()):
-                command = command_run.command
-                if "npm install" in command:
-                    # Uninstall packages
-                    package_names = re.findall
+#         if step_data["prompt_path"] == "development/implement_changes.prompt":
+#             # Revert file changes
+#             file_name = step_data["prompt_data"]["file_name"]
+#             file_content = step_data["prompt_data"]["file_content"]
+#             relative_path, absolute_path = project.get_full_file_path("", file_name)
+#             update_file(absolute_path, file_content)  # Restore previous file content
+#         elif step_data["prompt_path"] == "development/task/breakdown.prompt":
+#             # Handle potential command rollbacks
+#             for command_run in CommandRuns.select().where(
+#                 (CommandRuns.app == app_id) &
+#                 (CommandRuns.high_level_step == step_data["step_id"])
+#             ).order_by(CommandRuns.timestamp.desc()):
+#                 command = command_run.command
+#                 if "npm install" in command:
+#                     # Uninstall packages
+#                     package_names = re.findall
 
 
 if __name__ == "__main__":
