@@ -1,3 +1,4 @@
+from django.db import models
 from peewee import ForeignKeyField, AutoField, TextField, IntegerField, CharField
 from database.config import DATABASE_TYPE
 from database.models.components.base_models import BaseModel
@@ -30,3 +31,11 @@ class DevelopmentSteps(BaseModel):
         indexes = (
             (('app', 'previous_step', 'high_level_step'), True),
         )
+
+    parent_step = models.ForeignKey(
+        'self', 
+        on_delete=models.CASCADE, 
+        null=True, 
+        blank=True,
+        related_name='child_steps'  # Add related_name for easier reverse querying
+    )

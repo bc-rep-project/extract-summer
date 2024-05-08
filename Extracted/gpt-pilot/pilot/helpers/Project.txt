@@ -1,15 +1,14 @@
 import json
 import os
-import shutil
-from datetime import datetime
-from peewee import *
-# from database.database import Snapshot
-
 from pathlib import Path
 from typing import Tuple, Optional, Union
 
 import peewee
 from playhouse.shortcuts import model_to_dict
+
+from database.models.development_steps import DevelopmentSteps
+from database.database import save_development_step as db_save_development_step
+from .main import Command
 
 from const.messages import CHECK_AND_CONTINUE, AFFIRMATIVE_ANSWERS, NEGATIVE_ANSWERS, STUCK_IN_LOOP
 from utils.style import color_yellow_bold, color_cyan, color_white_bold, color_red_bold
@@ -45,18 +44,6 @@ from utils.describe import describe_file
 from os.path import abspath, relpath
 
 
-db = SqliteDatabase('snapshots.db')  # Or your preferred database
-
-class Snapshot(Model):
-    timestamp = DateTimeField(default=datetime.now)
-    step = CharField()  # Associated development step
-    user_input = TextField(null=True)
-    data = TextField()  # JSON-serialized snapshot data
-
-    class Meta:
-        database = db
-
-
 class Project:
     def __init__(
         self,
@@ -87,9 +74,6 @@ class Project:
             'last_command_run': None,
             'last_development_step': None,
         }
-        self.snapshots = []
-        self.current_state = None
-        self.workspace_path = None  # Assuming you have a way to set the workspace path
         # TODO make flexible
         self.root_path = ''
         self.skip_until_dev_step = self.args['skip_until_dev_step'] if 'skip_until_dev_step' in self.args else None
@@ -127,100 +111,6 @@ class Project:
         self.dev_steps_to_load = []
         self.run_command = None
         # end loading of project
-
-        
-    def create_snapshot(self, development_step, user_input=None, snapshot_data={}):
-        snapshot = {
-            'timestamp': datetime.now().isoformat(),
-            'development_step': development_step,
-            'user_input': user_input,
-            'snapshot_data': json.dumps(snapshot_data)
-        }
-        self.snapshots.append(snapshot)
-        self.current_state = snapshot
-
-        # Create a directory for the snapshot
-        snapshot_dir = os.path.join(self.workspace_path, f"snapshot_{len(self.snapshots)}")
-        os.makedirs(snapshot_dir, exist_ok=True)
-
-        # Save snapshot data to a file
-        with open(os.path.join(snapshot_dir, "data.json"), "w") as f:
-            json.dump(snapshot_data, f)
-
-    def list_snapshots(self):
-        return self.snapshots
-
-    def restore_snapshot(self, snapshot_index):
-        if 0 <= snapshot_index < len(self.snapshots):
-            snapshot = self.snapshots[snapshot_index]
-            snapshot_data = json.loads(snapshot['snapshot_data'])
-
-            # Restore file system from the snapshot
-            self._restore_file_system(snapshot_data.get('file_system', {}))
-
-            # Restore project variables (implement as needed)
-            # ... 
-
-            self.current_state = snapshot
-            print(f"Restored snapshot from {snapshot['timestamp']} (Step: {snapshot['development_step']})")
-        else:
-            print("Invalid snapshot index")
-
-    def save_development_step(self, development_step):
-        # Save the development step
-        # ...
-
-        snapshot_data = {
-            # ... (capture relevant data for rollback) ...
-            'file_system': self._capture_file_system_state(),
-            # 'variables': self.get_project_variables(),  # Add if needed
-        }
-        self.create_snapshot(development_step, data=snapshot_data)
-
-    def save_user_input(self, user_input):
-        # Save the user input
-        # ...
-        snapshot_data = {
-            # ... (capture relevant data for rollback) ...
-            'file_system': self._capture_file_system_state(),
-            # 'variables': self.get_project_variables(),  # Add if needed
-        }
-        self.create_snapshot(None, user_input, data=snapshot_data)
-
-
-    def _capture_file_system_state(self):
-        """
-        Capture the state of the project's file system.
-        """
-        file_system_state = {}
-        for dirpath, dirnames, filenames in os.walk(self.workspace_path):
-            for filename in filenames:
-                file_path = os.path.join(dirpath, filename)
-                with open(file_path, 'r') as f:
-                    file_system_state[file_path] = f.read()
-        return file_system_state
-
-    def _restore_file_system(self, file_system_state):
-        """
-        Restore the file system from a snapshot.
-        """
-        # Clear the current workspace (be cautious with this!)
-        for filename in os.listdir(self.workspace_path):
-            file_path = os.path.join(self.workspace_path, filename)
-            try:
-                if os.path.isfile(file_path) or os.path.islink(file_path):
-                    os.unlink(file_path)
-                elif os.path.isdir(file_path):
-                    shutil.rmtree(file_path)
-            except Exception as e:
-                print(f"Error while clearing workspace: {e}")
-
-        # Restore files from the snapshot
-        for file_path, content in file_system_state.items():
-            os.makedirs(os.path.dirname(file_path), exist_ok=True)
-            with open(file_path, 'w') as f:
-                f.write(content)
-
 
     def set_root_path(self, root_path: str):
         self.root_path = root_path
@@ -313,8 +203,6 @@ class Project:
 
         print('', type='verbose', category='agent:product-owner')
         self.project_manager.get_project_description(self.spec_writer)
-        telemetry.set("initial_prompt", self.project_description)
-        print({ "project_description": self.project_description }, type='projectDescription')
         self.project_manager.get_user_stories()
         # self.user_tasks = self.project_manager.get_user_tasks()
 
@@ -353,7 +241,6 @@ class Project:
                 self.finish_loading()
 
             self.previous_features = get_features_by_app_id(self.args['app_id'])
-            print({"featuresList": self.previous_features}, type='featuresList')
             if not self.skip_steps:
                 print('', type='verbose', category='pythagora')
                 if self.run_command and self.check_ipc():
@@ -857,3 +744,137 @@ class Project:
                 # remove all lines that contain 'debugging_log'
                 file['content'] = remove_lines_with_string(file['content'], 'gpt_pilot_debugging_log')
                 self.save_file(file)
+
+    def __init__(self, *args, max_history_size=100, **kwargs):
+        # ... existing initialization logic ...
+        self.history = []  # List to store development steps for undo/redo
+        self.current_step = -1  # Pointer to the current step in the history
+        self.max_history_size = max_history_size  # Maximum size of the history
+
+    def save_development_step(self, step, parent_step=None):
+        """
+        Saves a development step and manages the undo/redo history.
+
+        Args:
+            step (dict): The development step data.
+            parent_step (DevelopmentSteps, optional): The parent step. Defaults to None. 
+        """
+
+        # Create a Command object for the development step
+        command = Command(
+            action=lambda: self.apply_step(step),  # Function to apply the step
+            undo_action=lambda: self.revert_step(step)  # Function to revert the step
+        )
+
+        # Execute the command and update history
+        self.command_history.execute_command(command) 
+
+        # Conflict resolution logic (using database models instead of in-memory list)
+        if parent_step and parent_step.id != self.history[self.current_step].id: 
+            raise Exception("Conflict detected!")
+
+        # Save the step to the database 
+        development_step = db_save_development_step(self, parent_step.id if parent_step else None, step) 
+
+        # Update the in-memory history for undo/redo 
+        self.history.append(development_step)
+        self.current_step += 1
+
+        # Limit the history size
+        if len(self.history) > self.max_history_size:
+            self.history.pop(0)
+            self.current_step -= 1
+
+    def get_previous_step(self):
+        """
+        Gets the previous development step in the history.
+
+        Returns:
+            DevelopmentSteps: The previous step, or None if at the beginning of history. 
+        """
+        if self.current_step > 0:
+            self.current_step -= 1
+            return self.history[self.current_step]
+        else:
+            return None
+
+    def get_next_step(self):
+        """
+        Gets the next development step in the history.
+
+        Returns:
+            DevelopmentSteps: The next step, or None if at the end of history.
+        """
+        if self.current_step < len(self.history) - 1:
+            self.current_step += 1
+            return self.history[self.current_step]
+        else:
+            return None
+
+    def get_step_action_data(self, step_id):
+        """
+        Retrieves the specific data needed to undo/redo a step.
+
+        Args:
+            step_id (int): The ID of the step.
+
+        Returns:
+            dict: The step data.
+        """
+        # Implement your database retrieval logic here
+        # For example, you might fetch the previous file content, command details, etc.
+        step_data = database.get_step_action_data(step_id)
+        return step_data
+
+    def undo_step(self):
+        """
+        Reverts the last development step in the history.
+        """
+        try:
+            if self.current_step >= 0:
+                step = self.history[self.current_step]
+                step_data = self.get_step_action_data(step.id)
+
+                # Handle dependencies (recursive calls to undo)
+                for dependency in step_data.get('dependencies', []):
+                    self.undo_step(dependency) 
+
+                if step_data['action_type'] == 'file_change':
+                    # Restore the previous file content
+                    update_file(step_data['file_path'], step_data['previous_content'], project=self) 
+                elif step_data['action_type'] == 'command':
+                    # Handle command undo (if applicable)
+                    if step_data['undo_command']:
+                        run_command_until_success(self, step_data['undo_command'])
+                    else:
+                        print(f"Undoing command: {step_data['command']}")  # Or log a message
+                elif step_data['action_type'] == 'human_intervention':
+                    # Provide a summary of the undone action
+                    print(f"Undoing human intervention: {step_data['description']}") 
+                else:
+                    raise UndoRedoError(f"Unsupported action type: {step_data['action_type']}") 
+
+                self.current_step -= 1
+        except KeyError as e:
+            print(f"Error undoing step: missing key {e}")
+        except UndoRedoError as e:
+            print(f"Error undoing step: {e}")
+
+    # def redo_step(self):
+    #     """
+    #     Reapplies the next development step in the history.
+    #     """
+    #     if self.current_step < len(self.history) - 1:
+    #         self.current_step += 1
+    #         step = self.history[self.current_step]
+    #         step_data = self.get_step_action_data(step.id)
+
+    #         if step_data['action_type'] == 'file_change':
+    #             # Reapply the file changes 
+    #             update_file(step_data['file_path'], step_data['new_content'], project=self) 
+    #         elif step_data['action_type'] == 'command':
+    #             # Re-execute the command
+    #             run_command_until_success(self, step_data['command']) 
+    #         elif step_data['action_type'] == 'human_intervention':
+    #             # Provide a summary of the redone action 
+    #             print(f"Redoing human intervention: {step_data['description']}")
