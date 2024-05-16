@@ -1,6 +1,7 @@
 from database.models.file_snapshot import FileSnapshot
 from database.models.files import File
 
+from database.models.history import CommandHistory, UserInputHistory
 from database.models.checkpoint import Checkpoint
 from playhouse.shortcuts import model_to_dict
 from utils.style import color_yellow, color_red
@@ -51,6 +52,8 @@ TABLES = [
             File,
             Feature,
             Checkpoint,
+            CommandHistory, 
+            UserInputHistory,
         ]
 
 def create_tables():

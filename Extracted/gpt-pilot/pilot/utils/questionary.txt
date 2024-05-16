@@ -1,6 +1,7 @@
 import platform
 import questionary
 import sys
+from database.models.history import UserInputHistory
 from database.database import save_user_input
 from utils.style import style_config
 from utils.print import remove_ansi_codes
@@ -35,6 +36,11 @@ def styled_text(project, question, ignore_user_input_count=False, style=None, hi
 
     if project is not None and not project.check_ipc():
         print('\n\n', end='')
+
+    if not ignore_user_input_count:
+        save_user_input(project, question, response, hint)
+        UserInputHistory.create(app=project.app, input=response)
+
     return response
 
 

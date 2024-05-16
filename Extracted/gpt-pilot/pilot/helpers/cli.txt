@@ -8,6 +8,7 @@ import time
 import platform
 from typing import Dict, Union
 
+from database.models.history import CommandHistory
 from logger.logger import logger
 from utils.style import color_green, color_red, color_yellow_bold
 from utils.ignore import IgnoreMatcher
@@ -319,6 +320,8 @@ def execute_command(project, command, timeout=None, success_message=None, comman
         return_value += 'stdout:\n```\n' + output[-MAX_COMMAND_OUTPUT_LENGTH:] + '\n```'
 
     save_command_run(project, command, return_value, done_or_error_response, process.returncode)
+
+    CommandHistory.create(app=project.app, command=command)
 
     return return_value, done_or_error_response, process.returncode
 

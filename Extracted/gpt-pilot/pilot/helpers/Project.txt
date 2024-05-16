@@ -817,6 +817,39 @@ class Project:
             if file_snapshot.file.full_path not in self.files:
                 self.files.append(file_snapshot.file.full_path)
 
+    def rollback_to_step(self, step_id: int):
+        """
+        Rollback to a specific development step.
+
+        Args:
+            step_id (int): The ID of the development step to rollback to.
+        """
+        try:
+            target_step = DevelopmentSteps.get(DevelopmentSteps.id == step_id)
+
+            # Confirm rollback with user
+            print(color_yellow(f"Rolling back to step {target_step.id} "
+                              f"({target_step.created_at}): {target_step.prompt_path}"))
+            confirm = input("Are you sure you want to rollback? (y/n): ")
+            if confirm.lower() != 'y':
+                return
+
+            # 1. Restore the codebase
+            self.restore_files(target_step.id)
+
+            # 2. Delete all subsequent development steps
+            delete_all_subsequent_steps(self, target_step)
+
+            # 3. Update last_development_step in checkpoints
+            self.checkpoints['last_development_step'] = model_to_dict(target_step, recurse=False)
+
+            print(color_yellow(f"Rollback to step {step_id} successful!"))
+
+        except DevelopmentSteps.DoesNotExist:
+            print(color_yellow(f"Step with ID {step_id} not found."))
+        except Exception as e:
+            print(color_yellow(f"Rollback failed: {e}"))
+
     def delete_all_steps_except_current_branch(self):
         delete_unconnected_steps_from(self.checkpoints['last_development_step'], 'previous_step')
         delete_unconnected_steps_from(self.checkpoints['last_command_run'], 'previous_step')
