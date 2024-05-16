@@ -54,12 +54,25 @@ def init():
 
     arguments = get_arguments()
 
+    # Handle checkpoint and rollback commands
+    if arguments.get('checkpoint'):
+        if arguments['checkpoint'] == 'create':
+            description = arguments.get('description')  # Get optional description
+            project.create_checkpoint(description)
+        elif arguments['checkpoint'] == 'list':
+            project.list_checkpoints()
+        # ... other checkpoint subcommands ... 
+    elif arguments.get('rollback'):
+        checkpoint_id = arguments.get('checkpoint_id')
+        num_steps = arguments.get('num_steps')
+        project.rollback(checkpoint_id, num_steps)
+
     logger.info('Starting with args: %s', arguments)
 
     return arguments
 
 
-if __name__ == "__main__":
+def main():
     ask_feedback = True
     project = None
     run_exit_fn = True
@@ -176,37 +189,5 @@ if __name__ == "__main__":
         if run_exit_fn:
             exit_gpt_pilot(project, ask_feedback)
 
-class Command:
-    def __init__(self, action, undo_action):
-        self.action = action
-        self.undo_action = undo_action
-
-class CLI:
-    def __init__(self):
-        self.history = []
-        self.redo_stack = []
-
-    def execute_command(self, command):
-        self.history.append(command)
-        command.action()
-        self.redo_stack = []
-
-    def undo(self):
-        if not self.history:
-            print("No actions to undo.")
-            return
-        last_command = self.history.pop()
-        last_command.undo_action()
-        self.redo_stack.append(last_command)
-
-    def redo(self):
-        if not self.redo_stack:
-            print("No actions to redo.")
-            return
-        last_command = self.redo_stack.pop()
-        self.history.append(last_command)
-        last_command.action()
-
-    def list_history(self):
-        for i, command in enumerate(self.history):
-            print(f"{i+1}: {command.action.__name__}")
+if __name__ == "__main__":
+    main()

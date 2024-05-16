@@ -1,3 +1,15 @@
+import os
+from datetime import datetime
+import traceback
+
+import shutil
+from database.database import Checkpoint, FileSnapshot, get_all_app_development_steps, get_last_development_step, save_file_snapshot, delete_all_subsequent_steps
+from utils.style import color_yellow, color_red
+from logger.logger import logger
+from const.common import STEPS
+from utils.style import color_yellow
+from helpers.FileHandler import FileHandler
+
 import json
 import os
 from pathlib import Path
@@ -5,10 +17,6 @@ from typing import Tuple, Optional, Union
 
 import peewee
 from playhouse.shortcuts import model_to_dict
-
-from database.models.development_steps import DevelopmentSteps
-from database.database import save_development_step as db_save_development_step
-from .main import Command
 
 from const.messages import CHECK_AND_CONTINUE, AFFIRMATIVE_ANSWERS, NEGATIVE_ANSWERS, STUCK_IN_LOOP
 from utils.style import color_yellow_bold, color_cyan, color_white_bold, color_red_bold
@@ -97,6 +105,7 @@ class Project:
         self.development_plan = None
         self.previous_features = None
         self.current_feature = None
+        self.is_complex_app = True
         self.dot_pilot_gpt = DotGptPilot(log_chat_completions=True)
 
         if os.getenv("AUTOFIX_FILE_PATHS", "").lower() in ["true", "1", "yes"]:
@@ -203,6 +212,8 @@ class Project:
 
         print('', type='verbose', category='agent:product-owner')
         self.project_manager.get_project_description(self.spec_writer)
+        telemetry.set("initial_prompt", self.project_description)
+        print({ "project_description": self.project_description }, type='projectDescription')
         self.project_manager.get_user_stories()
         # self.user_tasks = self.project_manager.get_user_tasks()
 
@@ -241,6 +252,7 @@ class Project:
                 self.finish_loading()
 
             self.previous_features = get_features_by_app_id(self.args['app_id'])
+            print({"featuresList": self.previous_features}, type='featuresList')
             if not self.skip_steps:
                 print('', type='verbose', category='pythagora')
                 if self.run_command and self.check_ipc():
@@ -287,6 +299,168 @@ class Project:
             self.developer.start_coding('feature')
             print('', type='verbose', category='agent:tech-lead')
             self.tech_lead.create_feature_summary(feature_description)
+
+    def create_checkpoint(self, description: Optional[str] = None):
+        """
+        Create a checkpoint of the current project state.
+
+        Args:
+            description (Optional[str]): A brief description for the checkpoint.
+        """
+
+        logger.info(color_yellow(f"Creating a checkpoint{' - ' + description if description else ''}..."))
+
+        # 1. Save a file snapshot
+        self.save_files_snapshot()
+
+        # 2. Save a checkpoint entry to the database
+        self.save_checkpoint_to_database(description)
+
+        logger.info(color_yellow("Checkpoint created successfully."))
+
+    def save_checkpoint_to_database(self, description: Optional[str] = None):
+        """
+        Save a checkpoint record to the database. 
+
+        This function assumes you have a `Checkpoint` model in your database 
+        that can store information about the checkpoint, such as the timestamp,
+        a description, and a reference to the last development step.
+        """
+        last_step = get_last_development_step(self.args['app_id'])
+        Checkpoint.create(app=self.app, description=description, last_development_step=last_step.id)
+
+    def save_files_snapshot(self, development_step_id=None):
+        """Save snapshot of all project files to the database."""
+        if development_step_id is None:
+            development_step_id = self.checkpoints['last_development_step']['id']
+
+        file_handler = FileHandler(self)
+        all_files = file_handler.get_all_files(self.workspace)
+
+        for file in all_files:
+            relative_path = os.path.relpath(file, self.workspace)
+            file_content = file_handler.read_file(file)
+
+            save_file_snapshot(
+                self.app.id,
+                development_step_id,
+                relative_path,
+                file_content
+            )
+
+    def rollback(self, checkpoint_id=None, num_steps=None):
+        """
+        Rollback to a previous checkpoint.
+
+        Args:
+            checkpoint_id (str, optional): The ID of the checkpoint to rollback to.
+            num_steps (int, optional): The number of steps to rollback.
+        """
+
+        if checkpoint_id is not None and num_steps is not None:
+            print(color_red("Please provide either checkpoint_id or num_steps, not both."))
+            return
+
+        try:
+            if checkpoint_id is not None:
+                checkpoint = self.get_checkpoint_by_id(checkpoint_id)
+            elif num_steps is not None:
+                checkpoint = self.get_checkpoint_by_steps(num_steps)
+            else:
+                print(color_red("Please provide either checkpoint_id or num_steps."))
+                return
+
+            if checkpoint is None:
+                return
+
+            # Confirm rollback
+            if not self.confirm_rollback(checkpoint):
+                return
+
+            # Restore the codebase
+            self.restore_codebase(checkpoint)
+
+            # Reset development step 
+            self.reset_development_step(checkpoint)
+
+            print(color_yellow(f"Rollback to checkpoint {checkpoint.id} successful!"))
+
+        except Exception as e:
+            print(color_red(f"Rollback failed: {e}"))
+            traceback.print_exc()
+
+    def get_checkpoint_by_id(self, checkpoint_id):
+        """Retrieve a checkpoint by its ID."""
+        try:
+            checkpoint = Checkpoint.get(Checkpoint.id == checkpoint_id)
+            return checkpoint
+        except Checkpoint.DoesNotExist:
+            print(color_red(f"Checkpoint with ID {checkpoint_id} not found."))
+            return None
+
+    def get_checkpoint_by_steps(self, num_steps):
+        """Retrieve a checkpoint by going back a certain number of steps."""
+        last_step = get_last_development_step(self.app.id)
+        steps = get_all_app_development_steps(self.app.id, last_step=last_step.id)
+
+        if len(steps) <= num_steps:
+            print(color_red(f"Not enough steps to rollback {num_steps} times. "
+                            f"There are currently {len(steps)} steps available."))
+            return None
+
+        target_step = steps[num_steps]  # steps are ordered in reverse chronological order
+
+        try:
+            checkpoint = Checkpoint.get(Checkpoint.last_development_step == target_step.id)
+            return checkpoint
+        except Checkpoint.DoesNotExist:
+            print(color_red(f"No checkpoint found for step {target_step.id}."))
+            return None
+
+    def confirm_rollback(self, checkpoint):
+        """Confirm the rollback with the user."""
+        print(color_yellow(f"Rolling back to checkpoint {checkpoint.id} ({checkpoint.timestamp})"))
+        print(color_yellow(f"Description: {checkpoint.description or 'No description'}"))
+        
+        confirm = input("Are you sure you want to rollback? This will overwrite any changes since the checkpoint. (y/n): ")
+        return confirm.lower() == 'y'
+
+    def restore_codebase(self, checkpoint):
+        """Restore the codebase to the state saved in the checkpoint."""
+        try:
+            for snapshot in FileSnapshot.select().where(FileSnapshot.development_step == checkpoint.last_development_step):
+                file_path = os.path.join(self.workspace, snapshot.file_path)
+
+                # Create the directory if it doesn't exist
+                os.makedirs(os.path.dirname(file_path), exist_ok=True)
+
+                with open(file_path, 'w', encoding='utf-8') as f:
+                    f.write(snapshot.content)
+
+            # TODO: Remove files that didn't exist in the checkpoint
+        except Exception as e:
+            print(color_red(f"Error restoring codebase: {e}"))
+            raise # Re-raise the exception to stop the rollback process
+
+    def reset_development_step(self, checkpoint):
+        """Reset the project state to the checkpoint."""
+        try:
+            # 1. Delete all subsequent development steps
+            delete_all_subsequent_steps(self)
+
+            # 2. Set current_step to the one from the checkpoint
+            step_before_checkpoint = get_all_app_development_steps(self.app.id, last_step=checkpoint.last_development_step.id, loading_steps_only=True)
+            if step_before_checkpoint:
+                previous_high_level_step = step_before_checkpoint[0]['prompt_path'].split('/')[-1]
+                self.current_step = STEPS[STEPS.index(previous_high_level_step) + 1]
+            else:
+                self.current_step = 'project_description'
+
+            # 3. Update last_development_step in checkpoints
+            self.checkpoints['last_development_step'] = model_to_dict(checkpoint.last_development_step, recurse=False)
+        except Exception as e:
+            print(color_red(f"Error resetting development step: {e}"))
+            raise # Re-raise the exception
 
     def get_directory_tree(self, with_descriptions=False):
         """
@@ -744,137 +918,3 @@ class Project:
                 # remove all lines that contain 'debugging_log'
                 file['content'] = remove_lines_with_string(file['content'], 'gpt_pilot_debugging_log')
                 self.save_file(file)
-
-    def __init__(self, *args, max_history_size=100, **kwargs):
-        # ... existing initialization logic ...
-        self.history = []  # List to store development steps for undo/redo
-        self.current_step = -1  # Pointer to the current step in the history
-        self.max_history_size = max_history_size  # Maximum size of the history
-
-    def save_development_step(self, step, parent_step=None):
-        """
-        Saves a development step and manages the undo/redo history.
-
-        Args:
-            step (dict): The development step data.
-            parent_step (DevelopmentSteps, optional): The parent step. Defaults to None. 
-        """
-
-        # Create a Command object for the development step
-        command = Command(
-            action=lambda: self.apply_step(step),  # Function to apply the step
-            undo_action=lambda: self.revert_step(step)  # Function to revert the step
-        )
-
-        # Execute the command and update history
-        self.command_history.execute_command(command) 
-
-        # Conflict resolution logic (using database models instead of in-memory list)
-        if parent_step and parent_step.id != self.history[self.current_step].id: 
-            raise Exception("Conflict detected!")
-
-        # Save the step to the database 
-        development_step = db_save_development_step(self, parent_step.id if parent_step else None, step) 
-
-        # Update the in-memory history for undo/redo 
-        self.history.append(development_step)
-        self.current_step += 1
-
-        # Limit the history size
-        if len(self.history) > self.max_history_size:
-            self.history.pop(0)
-            self.current_step -= 1
-
-    def get_previous_step(self):
-        """
-        Gets the previous development step in the history.
-
-        Returns:
-            DevelopmentSteps: The previous step, or None if at the beginning of history. 
-        """
-        if self.current_step > 0:
-            self.current_step -= 1
-            return self.history[self.current_step]
-        else:
-            return None
-
-    def get_next_step(self):
-        """
-        Gets the next development step in the history.
-
-        Returns:
-            DevelopmentSteps: The next step, or None if at the end of history.
-        """
-        if self.current_step < len(self.history) - 1:
-            self.current_step += 1
-            return self.history[self.current_step]
-        else:
-            return None
-
-    def get_step_action_data(self, step_id):
-        """
-        Retrieves the specific data needed to undo/redo a step.
-
-        Args:
-            step_id (int): The ID of the step.
-
-        Returns:
-            dict: The step data.
-        """
-        # Implement your database retrieval logic here
-        # For example, you might fetch the previous file content, command details, etc.
-        step_data = database.get_step_action_data(step_id)
-        return step_data
-
-    def undo_step(self):
-        """
-        Reverts the last development step in the history.
-        """
-        try:
-            if self.current_step >= 0:
-                step = self.history[self.current_step]
-                step_data = self.get_step_action_data(step.id)
-
-                # Handle dependencies (recursive calls to undo)
-                for dependency in step_data.get('dependencies', []):
-                    self.undo_step(dependency) 
-
-                if step_data['action_type'] == 'file_change':
-                    # Restore the previous file content
-                    update_file(step_data['file_path'], step_data['previous_content'], project=self) 
-                elif step_data['action_type'] == 'command':
-                    # Handle command undo (if applicable)
-                    if step_data['undo_command']:
-                        run_command_until_success(self, step_data['undo_command'])
-                    else:
-                        print(f"Undoing command: {step_data['command']}")  # Or log a message
-                elif step_data['action_type'] == 'human_intervention':
-                    # Provide a summary of the undone action
-                    print(f"Undoing human intervention: {step_data['description']}") 
-                else:
-                    raise UndoRedoError(f"Unsupported action type: {step_data['action_type']}") 
-
-                self.current_step -= 1
-        except KeyError as e:
-            print(f"Error undoing step: missing key {e}")
-        except UndoRedoError as e:
-            print(f"Error undoing step: {e}")
-
-    # def redo_step(self):
-    #     """
-    #     Reapplies the next development step in the history.
-    #     """
-    #     if self.current_step < len(self.history) - 1:
-    #         self.current_step += 1
-    #         step = self.history[self.current_step]
-    #         step_data = self.get_step_action_data(step.id)
-
-    #         if step_data['action_type'] == 'file_change':
-    #             # Reapply the file changes 
-    #             update_file(step_data['file_path'], step_data['new_content'], project=self) 
-    #         elif step_data['action_type'] == 'command':
-    #             # Re-execute the command
-    #             run_command_until_success(self, step_data['command']) 
-    #         elif step_data['action_type'] == 'human_intervention':
-    #             # Provide a summary of the redone action 
-    #             print(f"Redoing human intervention: {step_data['description']}")

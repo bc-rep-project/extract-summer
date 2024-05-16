@@ -3,6 +3,7 @@ import os
 import re
 import sys
 import uuid
+import argparse
 from getpass import getuser
 from database.database import get_app, get_app_by_user_workspace
 from utils.style import color_green_bold, color_red, style_config
@@ -81,6 +82,19 @@ def get_arguments():
         arguments['step'] = None
 
     return arguments
+
+    # Checkpoint commands
+    parser.add_argument('--checkpoint', choices=['create', 'list'], 
+                        help='Manage checkpoints. Use "create" to create a checkpoint or "list" to list existing checkpoints.')
+    parser.add_argument('--description', help='Optional description for the checkpoint.')
+
+    # Rollback command
+    parser.add_argument('--rollback', action='store_true', help='Rollback to a previous checkpoint.')
+    parser.add_argument('--checkpoint_id', help='ID of the checkpoint to rollback to.')
+    parser.add_argument('--num_steps', type=int, help='Number of steps to rollback.')
+
+    args = parser.parse_args()
+    return vars(args)
 
 
 def get_email():

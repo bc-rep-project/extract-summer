@@ -114,7 +114,7 @@ class Developer(Agent):
                 should_update_plan = 'llm_solutions' in task_executed and task_executed['llm_solutions']
                 if num_of_finished_tasks < len(self.project.development_plan) and should_update_plan:
                     self.project.tech_lead.update_plan(task_source, task_executed['llm_solutions'], self.modified_files, i)
-            print_task_progress(i + 1, num_of_tasks, dev_task['description'], task_source, 'done')
+                print_task_progress(i + 1, num_of_tasks, dev_task['description'], task_source, 'done')
 
         # DEVELOPMENT END
         if not self.project.skip_steps:
@@ -152,6 +152,7 @@ class Developer(Agent):
         if not should_execute_task:
             return None
 
+        print_task_progress(i + 1, len(self.project.development_plan), development_task['description'], task_source, 'in_progress')
         print(color_green_bold(f'Implementing task #{i + 1}: ') + color_green(f' {development_task["description"]}\n'), category='pythagora')
         print(f'Starting task #{i + 1} implementation...', type='verbose', category='agent:developer')
         self.project.dot_pilot_gpt.chat_log_folder(i + 1)
@@ -160,6 +161,10 @@ class Developer(Agent):
         # we get here only after all tasks but last one are loaded, so this must be final task
         if self.project.dev_steps_to_load and 'breakdown.prompt' in self.project.dev_steps_to_load[0]['prompt_path']:
             instructions = self.project.dev_steps_to_load[0]['llm_response']['text']
+            files = self.project.dev_steps_to_load[0]['prompt_data']['files'] if 'files' in self.project.dev_steps_to_load[0]['prompt_data'] else set()
+            self.relevant_files = set()
+            for file in files:
+                self.relevant_files.add(os.path.join(file['path'], file['name']))
             convo_dev_task.messages = self.project.dev_steps_to_load[0]['messages']
             # remove breakdown from the head of dev_steps_to_load; if it's last, record it in checkpoint
             self.project.cleanup_list('dev_steps_to_load', int(self.project.dev_steps_to_load[0]['id']) + 1)
@@ -243,10 +248,6 @@ class Developer(Agent):
                 # remove latest ID (which can be last_iteration or last_detailed_user_review_goal) from the head of
                 # dev_steps_to_load; if it's last, record it in checkpoint
                 self.project.cleanup_list('dev_steps_to_load', max(id for id in ids if id is not None))
-
-        if self.relevant_files is None:
-            # Recompute relevant files after project load
-            self.relevant_files = self.filter_relevant_files(self.project.get_file_summaries(), current_task=development_task)
 
         while True:
             result = self.execute_task(convo_dev_task,
@@ -937,6 +938,7 @@ class Developer(Agent):
         }, IMPLEMENT_TASK)
 
         task_steps = llm_response['tasks']
+        review_convo.remove_last_x_messages(2)
         result = self.execute_task(review_convo, task_steps, task_source='review')
         return {
             'success': result['success'] if 'success' in result else False,
@@ -1088,9 +1090,13 @@ class Developer(Agent):
             "directory_tree": self.project.get_directory_tree(True),
             "current_task": development_task,
             "development_tasks": self.project.development_plan,
-            "files": self.project.get_all_coded_files(),
+            "files": self.project.get_all_coded_files(relevant_files=self.relevant_files),
+            "file_summaries": self.project.get_file_summaries(),
             "user_input": user_feedback,
             "previous_solutions": previous_solutions,
+            # TODO tried_alternative_solutions_to_current_issue is not used in prompt anymore because in case multiple
+            #  different issues are being solved, LLM gets confused and doesn't know which one to focus on. Long term
+            #  solution is to know when issues is solved and then clear tried_alternative_solutions_to_current_issue.
             "tried_alternative_solutions_to_current_issue": tried_alternative_solutions_to_current_issue,
             "previous_features": self.project.previous_features,
             "current_feature": self.project.current_feature,
