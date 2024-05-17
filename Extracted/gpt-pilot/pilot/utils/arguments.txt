@@ -93,6 +93,11 @@ def get_arguments():
     parser.add_argument('--checkpoint_id', help='ID of the checkpoint to rollback to.')
     parser.add_argument('--num_steps', type=int, help='Number of steps to rollback.')
 
+    # Rollback step command
+    parser.add_argument('--rollback_step', choices=['select', 'last'],
+                        help='Rollback to a specific or the last development step. '
+                             'Use "select" to choose from a list or "last" to rollback one step.')
+
     args = parser.parse_args()
     return vars(args)
 

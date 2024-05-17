@@ -45,6 +45,9 @@ class ProductOwner(Agent):
 
         if 'app_type' not in self.project.args:
             self.project.args['app_type'] = ask_for_app_type()
+
+        self.project.app = save_app(self.project)
+
         if 'name' not in self.project.args:
             while True:
                 question = 'What is the project name?'
@@ -64,7 +67,7 @@ class ProductOwner(Agent):
 
             self.project.args['name'] = clean_filename(project_name)
 
-        self.project.app = save_app(self.project)
+        # self.project.app = save_app(self.project)
 
         self.project.set_root_path(setup_workspace(self.project.args))
 

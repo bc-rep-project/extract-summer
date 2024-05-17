@@ -28,6 +28,14 @@ running_processes: Dict[str, tuple[str, int]] = {}
 
 def enqueue_output(out, q):
     for line in iter(out.readline, ''):
+        # Check if the process should be stopped
+        if stop_process:
+            break
+        q.put(line)
+    out.close()
+
+def enqueue_output(out, q):
+    for line in iter(out.readline, ''):
         if interrupted:  # Check if the flag is set
             break
         q.put(line)

@@ -850,6 +850,45 @@ class Project:
         except Exception as e:
             print(color_yellow(f"Rollback failed: {e}"))
 
+    def rollback_step(self):
+        """
+        Rolls back the project to the previous development step.
+        """
+        if not self.checkpoints['last_development_step']:
+            print(color_red("No previous development steps to rollback to."))
+            return
+
+        self.rollback_to_step(self.checkpoints['last_development_step']['id'])
+
+    def list_development_steps(self):
+        """
+        Lists all development steps taken in the project.
+        """
+        steps = get_all_app_development_steps(self.args['app_id'])
+        if not steps:
+            print(color_yellow("No development steps found."))
+            return
+
+        print(color_yellow_bold("\nDevelopment Steps:"))
+        for i, step in enumerate(steps):
+            print(f"{i + 1}. ID: {step['id']}, Time: {step['created_at']}, Prompt: {step['prompt_path']}")
+
+    def choose_rollback_step(self):
+        """
+        Prompts the user to choose a development step to rollback to.
+        """
+        self.list_development_steps()
+        while True:
+            try:
+                choice = int(input(color_yellow("Enter the number of the step to rollback to (or 0 to cancel): ")))
+                if choice == 0:
+                    return
+                step_id = get_all_app_development_steps(self.args['app_id'])[choice - 1]['id']
+                self.rollback_to_step(step_id)
+                break
+            except (ValueError, IndexError):
+                print(color_red("Invalid choice. Please enter a valid step number."))
+
     def delete_all_steps_except_current_branch(self):
         delete_unconnected_steps_from(self.checkpoints['last_development_step'], 'previous_step')
         delete_unconnected_steps_from(self.checkpoints['last_command_run'], 'previous_step')
