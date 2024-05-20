@@ -1,0 +1,14 @@
+name: Visualize repo
+on:
+  push:
+    branches:
+      - main
+jobs:
+  update-diagram:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v2
+      - uses: bc-rep-project/repo-visualizer@main
+        with:
+          output_file: diagram.svg
+          excluded_paths: node_modules,dist
