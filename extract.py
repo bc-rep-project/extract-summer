@@ -24,4 +24,4 @@ def extract_contents(directory):
                     print(f"Could not decode file: {filepath}")
 
 # Replace 'your_directory' with the path to the directory you want to extract contents from
-extract_contents('/workspaces/extract-summer/gpt-pilot')
+extract_contents('/workspaces/extract-summer/repo-visualizer')

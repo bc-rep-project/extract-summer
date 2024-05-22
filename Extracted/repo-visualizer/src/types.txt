@@ -1,0 +1,50 @@
+// export type ImportType = {
+//   moduleName: string;
+//   defaultImport: string;
+//   namedImports: Record<string, string>[];
+//   starImport: string;
+//   sideEffectOnly: boolean;
+// };
+// export type CommitType = {
+//   hash: string;
+//   subject: string;
+//   author: string;
+//   date: string;
+//   diff: { added: number; removed: number; modified: number };
+// };
+// export type FileType = {
+//   name: string;
+//   path: string;
+//   size: number;
+//   commits?: CommitType[];
+//   imports?: ImportType[];
+//   numberOfLines?: number;
+//   children?: FileType[];
+// };
+
+
+export type ImportType = {
+  moduleName: string; // The name of the module being imported (e.g., './utils')
+  defaultImport?: string; // The name of the default import (if any) (e.g., 'utils')
+  namedImports?: Record<string, string>[]; // An array of named imports (e.g., [{ importedName: 'keepBetween', localName: 'keepValue' }])
+  starImport?: string; // The name used for a star import (e.g., '* as allUtils')
+  sideEffectOnly?: boolean; // True if the import is for side effects only (e.g., 'import './styles.css'') 
+};
+
+export type CommitType = {
+  hash: string;
+  subject: string;
+  author: string;
+  date: string;
+  diff: { added: number; removed: number; modified: number };
+};
+
+export type FileType = {
+  name: string;
+  path: string;
+  size: number;
+  commits?: CommitType[];
+  imports?: ImportType[]; // Add the imports property here
+  numberOfLines?: number;
+  children?: FileType[];
+};

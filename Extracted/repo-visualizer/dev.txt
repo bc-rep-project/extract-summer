@@ -1,0 +1,35 @@
+const { processDir } = require("./src/process-dir.js");
+const { Tree } = require("./src/Tree.tsx");
+const ReactDOMServer = require("react-dom/server");
+const fs = require("fs");
+
+const main = async () => {
+  // Simulate input parameters (adjust as needed)
+  const rootPath = ""; 
+  const maxDepth = 9;
+  const customFileColors = {}; // Or provide your custom colors
+  const colorEncoding = "type"; // Or another encoding
+  const outputFile = "./diagram.svg"; 
+
+  // Get the processed file data
+  const data = await processDir(rootPath, [], []);
+
+  // Render the Tree component
+  const componentCodeString = ReactDOMServer.renderToStaticMarkup(
+    <Tree
+      data={data}
+      maxDepth={maxDepth}
+      colorEncoding={colorEncoding}
+      customFileColors={customFileColors}
+    />
+  );
+
+  // Write the SVG to a file
+  await fs.writeFileSync(outputFile, componentCodeString);
+
+  console.log(`Diagram generated at ${outputFile}`);
+};
+
+main().catch((e) => {
+  console.error("Error:", e);
+});
