@@ -1,5 +1,5 @@
-const { processDir } = require("./src/process-dir.js");
-const { Tree } = require("./src/Tree.tsx");
+const { processDir } = require("./dist/process-dir.js"); // Updated path
+const { Tree } = require("./dist/Tree.js"); // Updated path
 const ReactDOMServer = require("react-dom/server");
 const fs = require("fs");
 

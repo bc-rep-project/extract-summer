@@ -1,0 +1,6 @@
+import { Tree } from './Tree.tsx'; 
+
+const data = { /* some mock data */ };
+
+const treeElement = <Tree data={data} />;
+console.log(treeElement);

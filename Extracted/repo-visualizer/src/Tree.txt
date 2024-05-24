@@ -426,12 +426,13 @@ const ImportLines = ({ hoveredNodeId, data, cachedPositions }) => {
     });
     return incomingNodes.map((d) => {
       return (
+      <g key={d.data.path}> {/* Move key here */}
         <ImportLine
-          key={d.data.path}
           from={cachedPositions[d.data.path]}
           to={cachedPositions[hoveredNodeId]}
           isImport={true}
         />
+      </g>
       );
     });
   };
@@ -443,12 +444,13 @@ const ImportLines = ({ hoveredNodeId, data, cachedPositions }) => {
       })
       .map((imp) => {
         return (
+        <g key={imp.moduleName}> {/* Move key here */}
           <ImportLine
-            key={imp.moduleName}
             from={cachedPositions[hoveredNodeId]}
             to={cachedPositions[imp.moduleName]}
             isImport={false}
           />
+        </g>
         );
       });
   };
